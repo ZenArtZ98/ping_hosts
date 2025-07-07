@@ -1,34 +1,16 @@
 from fastapi import FastAPI, UploadFile, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import create_engine, Column, String, Float, select
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import Session
 from pydantic import BaseModel, IPvAnyAddress
 from typing import List, Optional
-from datetime import datetime
 import asyncio
 import csv
 import io
 import uuid
 
-from ping3 import ping
-
-DATABASE_URL = "sqlite:///./hosts.db"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
-
-class HostDB(Base):
-    __tablename__ = "hosts"
-    id = Column(String, primary_key=True, index=True)
-    ip = Column(String, unique=True, index=True)
-    last_ping = Column(Float, nullable=True)
-    delivered_pct = Column(Float, nullable=True)
-    lost_pct = Column(Float, nullable=True)
-    last_success = Column(String, nullable=True)
-
-Base.metadata.create_all(bind=engine)
+from db import SessionLocal, HostDB
+from ping_worker import start_ping_for_host, ping_worker
 
 class Host(BaseModel):
     id: str
@@ -40,7 +22,6 @@ class Host(BaseModel):
 
     class Config:
         from_attributes = True
-
 
 app = FastAPI(
     title="Ping Hosts API",
@@ -62,19 +43,22 @@ def get_db():
         yield db
     finally:
         db.close()
+
 @app.get("/hosts", response_model=List[Host])
 def get_hosts(db: Session = Depends(get_db)):
     return db.query(HostDB).all()
 
 @app.post("/hosts", response_model=Host)
-def add_host(host: Host, db: Session = Depends(get_db)):
+async def add_host(host: Host, db: Session = Depends(get_db)):
     if db.query(HostDB).filter(HostDB.ip == str(host.ip)).first():
         raise HTTPException(status_code=400, detail="IP already exists")
     db_host = HostDB(id=host.id, ip=str(host.ip))
     db.add(db_host)
-    print("[PING] Cycle complete, committing changes...")
     db.commit()
     db.refresh(db_host)
+    loop = asyncio.get_event_loop()
+    loop.create_task(start_ping_for_host(db_host.id))  # запускаем вручную
+
     return db_host
 
 @app.put("/hosts/{host_id}", response_model=Host)
@@ -109,10 +93,11 @@ def import_csv(file: UploadFile, db: Session = Depends(get_db)):
                 continue
             db_host = HostDB(id=str(uuid.uuid4()), ip=ip)
             db.add(db_host)
+            db.commit()
+            start_ping_for_host(db_host.id)
             imported += 1
         except Exception:
             continue
-    db.commit()
     return {"imported": imported}
 
 @app.get("/stats/export")
@@ -129,33 +114,6 @@ def export_csv(db: Session = Depends(get_db)):
     return StreamingResponse(output, media_type="text/csv", headers={
         "Content-Disposition": "attachment; filename=stats.csv"
     })
-
-async def ping_worker():
-    while True:
-        db = SessionLocal()
-        try:
-            for host in db.query(HostDB).all():
-                print(f"[PING] {host.ip}...")
-                res_times = []
-                for _ in range(4):
-                    try:
-                        res = ping(str(host.ip), timeout=1)
-                        if res is not None:
-                            res_times.append(res * 1000)
-                    except Exception:
-                        pass
-                    await asyncio.sleep(0.2)
-                total = 4
-                success = len(res_times)
-                host.last_ping = sum(res_times)/success if success else None
-                host.delivered_pct = round(success / total * 100, 2) if success else 0.0
-                host.lost_pct = 100 - host.delivered_pct
-                if success:
-                    host.last_success = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
-                print("[PING] Сomplete, committing changes...")
-                db.commit()
-        finally:
-            db.close()
 
 @app.on_event("startup")
 async def start_ping_loop():
