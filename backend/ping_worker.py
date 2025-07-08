@@ -3,7 +3,7 @@ from sqlalchemy import select
 from datetime import datetime
 from ping3 import ping
 import asyncio
-from db import SessionLocal, HostDB  # db.py должен содержать модель и сессию
+from db import SessionLocal, HostDB
 
 ping_tasks = {}
 

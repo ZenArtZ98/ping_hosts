@@ -57,7 +57,7 @@ async def add_host(host: Host, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_host)
     loop = asyncio.get_event_loop()
-    loop.create_task(start_ping_for_host(db_host.id))  # запускаем вручную
+    loop.create_task(start_ping_for_host(db_host.id))
 
     return db_host
 
@@ -82,7 +82,7 @@ def delete_host(host_id: str, db: Session = Depends(get_db)):
     return {"detail": "Deleted"}
 
 @app.post("/hosts/import")
-def import_csv(file: UploadFile, db: Session = Depends(get_db)):
+async def import_csv(file: UploadFile, db: Session = Depends(get_db)):
     contents = file.file.read().decode("utf-8")
     reader = csv.reader(io.StringIO(contents))
     imported = 0
@@ -94,7 +94,8 @@ def import_csv(file: UploadFile, db: Session = Depends(get_db)):
             db_host = HostDB(id=str(uuid.uuid4()), ip=ip)
             db.add(db_host)
             db.commit()
-            start_ping_for_host(db_host.id)
+            loop = asyncio.get_event_loop()
+            loop.create_task(start_ping_for_host(db_host.id))
             imported += 1
         except Exception:
             continue
