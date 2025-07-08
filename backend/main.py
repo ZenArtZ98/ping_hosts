@@ -134,7 +134,12 @@ async def ping_worker():
     while True:
         db = SessionLocal()
         try:
-            for host in db.query(HostDB).all():
+            host_ids = [h.id for h in db.query(HostDB.id).all()]
+            for host_id in host_ids:
+                host = db.query(HostDB).get(host_id)
+                if not host:
+                    continue
+
                 print(f"[PING] {host.ip}...")
                 res_times = []
                 for _ in range(4):
@@ -145,17 +150,24 @@ async def ping_worker():
                     except Exception:
                         pass
                     await asyncio.sleep(0.2)
+
+                latest_host = db.query(HostDB).get(host_id)
+                if not latest_host:
+                    continue
+
                 total = 4
                 success = len(res_times)
-                host.last_ping = sum(res_times)/success if success else None
-                host.delivered_pct = round(success / total * 100, 2) if success else 0.0
-                host.lost_pct = 100 - host.delivered_pct
+                latest_host.last_ping = sum(res_times)/success if success else None
+                latest_host.delivered_pct = round(success / total * 100, 2) if success else 0.0
+                latest_host.lost_pct = 100 - latest_host.delivered_pct
                 if success:
-                    host.last_success = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
-                print("[PING] Сomplete, committing changes...")
+                    latest_host.last_success = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+
+                print("[PING] Complete, committing changes...")
                 db.commit()
         finally:
             db.close()
+
 
 @app.on_event("startup")
 async def start_ping_loop():
