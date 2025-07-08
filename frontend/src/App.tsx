@@ -1,4 +1,3 @@
-// App.tsx
 import {useEffect, useState} from "react";
 import axios from "axios";
 
@@ -31,7 +30,7 @@ function App() {
     useEffect(() => {
         const fetchInterval = async () => {
             try {
-                const res = await axios.get("http://localhost:8000/refresh-interval");
+                const res = await axios.get("/refresh-interval");
                 setIntervalSec(res.data.interval);
                 setSecondsLeft(res.data.interval);
             } catch (err) {
@@ -58,7 +57,7 @@ function App() {
 
     const fetchHosts = async () => {
         try {
-            const res = await axios.get<Host[]>("http://localhost:8000/hosts");
+            const res = await axios.get<Host[]>("/hosts");
             setHosts(res.data);
         } catch (error) {
             console.error("Error fetching hosts:", error);
@@ -76,7 +75,7 @@ function App() {
             last_success: null,
         };
         try {
-            await axios.post("http://localhost:8000/hosts", newHost);
+            await axios.post("/hosts", newHost);
             setIpInput("");
             fetchHosts();
         } catch (err: any) {
@@ -90,7 +89,7 @@ function App() {
         if (!updatedHost) return;
         const newHost = {...updatedHost, ip};
         try {
-            await axios.put(`http://localhost:8000/hosts/${id}`, newHost);
+            await axios.put(`/hosts/${id}`, newHost);
             setEditId(null);
             setEditIp("");
             fetchHosts();
@@ -100,12 +99,12 @@ function App() {
     };
 
     const deleteHost = async (id: string) => {
-        await axios.delete(`http://localhost:8000/hosts/${id}`);
+        await axios.delete(`/hosts/${id}`);
         fetchHosts();
     };
 
     const exportCsv = async () => {
-        const res = await axios.get("http://localhost:8000/stats/export", {responseType: "blob"});
+        const res = await axios.get("/stats/export", {responseType: "blob"});
         const url = window.URL.createObjectURL(new Blob([res.data]));
         const link = document.createElement("a");
         link.href = url;
@@ -119,7 +118,7 @@ function App() {
         if (!file) return;
         const formData = new FormData();
         formData.append("file", file);
-        await axios.post("http://localhost:8000/hosts/import", formData);
+        await axios.post("/hosts/import", formData);
         setTimeout(fetchHosts, 1000);
     };
 
@@ -143,7 +142,7 @@ function App() {
 
     return (
         <div className="p-4 max-w-4xl mx-auto">
-            <h1 className="text-2xl font-bold mb-2">Ping Hosts</h1>
+            <h1 className="text-2xl font-bold mb-2">Ping Host</h1>
             <p className="text-gray-600 mb-4">Следующее обновление через: {secondsLeft}с</p>
             <div className="flex items-center gap-2 mb-4">
                 <input

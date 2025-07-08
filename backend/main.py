@@ -62,6 +62,11 @@ def get_db():
         yield db
     finally:
         db.close()
+
+@app.get("/refresh-interval")
+def get_interval():
+    return {"interval": 10}
+
 @app.get("/hosts", response_model=List[Host])
 def get_hosts(db: Session = Depends(get_db)):
     return db.query(HostDB).all()
